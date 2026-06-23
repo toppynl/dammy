@@ -1,0 +1,58 @@
+{
+  "name": "@getdammy/client",
+  "version": "0.2.1",
+  "description": "Client-SDK voor de DAM (single source of truth voor beelden): picker-handshake en stabiele preset-URLs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/toppynl/dammy.git"
+  },
+  "homepage": "https://github.com/toppynl/dammy#readme",
+  "bugs": {
+    "url": "https://github.com/toppynl/dammy/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "tsup"
+  },
+  "keywords": [
+    "dam",
+    "digital-asset-management",
+    "images",
+    "cms"
+  ],
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "tsup": "^8",
+    "typescript": "^5"
+  }
+}

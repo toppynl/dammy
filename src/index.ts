@@ -42,6 +42,19 @@ export type OpenPickerOptions = {
   };
   /** Origin waarheen de picker post; default window.location.origin. */
   origin?: string;
+  /**
+   * Scoped koppeling: een endpoint op JÓUW backend dat een vers, kortlevend
+   * picker-token int (POST → `{ token }`). Zet je dit, dan opent de picker
+   * brand-gepind en read-only en heeft de redacteur géén DAM-account nodig.
+   * Het integratie-geheim blijft zo server-side. Zie de integratiegids.
+   */
+  tokenEndpoint?: string;
+  /**
+   * Zachte voorkeuze van de startmap (DAM-categorie-id): de picker opent meteen
+   * in die map, maar de redacteur mag binnen z'n brand rondkijken. Wordt via
+   * `tokenEndpoint` doorgegeven aan je backend.
+   */
+  folder?: string;
 };
 
 /** Bouw een stabiele preset-URL uit een asset-id. Focal point + verversing zit
@@ -103,8 +116,36 @@ export function openDamPicker(opts: OpenPickerOptions = {}): Promise<DamAssetRef
   if (u?.url) qs.set("usage_url", u.url);
   if (u?.previousAsset) qs.set("previous_asset", u.previousAsset);
 
-  const popup = window.open(`${damOrigin}/picker?${qs.toString()}`, "dam-picker", "width=1100,height=800");
+  // Scoped koppeling: de popup MÓET binnen het klik-gebaar openen (anders
+  // blokkeert de browser 'm), dus open 'm leeg, haal een vers token van je eigen
+  // backend en navigeer 'm daarna naar de brand-gepinde picker.
+  if (opts.tokenEndpoint) {
+    const popup = window.open("about:blank", "dam-picker", "width=1100,height=800");
+    const result = waitForSelection(popup);
+    void (async () => {
+      try {
+        const res = await fetch(opts.tokenEndpoint!, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(opts.folder ? { folder: opts.folder } : {}),
+        });
+        const data = (await res.json()) as { token?: string };
+        if (data?.token) qs.set("session", data.token);
+      } catch {
+        /* val terug op het normale (login-)pad van de picker */
+      }
+      if (popup) popup.location.href = `${damOrigin}/picker?${qs.toString()}`;
+    })();
+    return result;
+  }
 
+  const popup = window.open(`${damOrigin}/picker?${qs.toString()}`, "dam-picker", "width=1100,height=800");
+  return waitForSelection(popup);
+}
+
+/** Wacht op de `dam:asset-selected`-postMessage uit de picker-popup (of `null`
+ *  als de gebruiker 'm sluit). Gedeeld door de scoped- en login-modus. */
+function waitForSelection(popup: Window | null): Promise<DamAssetRef | null> {
   return new Promise((resolve) => {
     let done = false;
     function finish(value: DamAssetRef | null) {

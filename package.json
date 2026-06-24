@@ -1,6 +1,6 @@
 {
   "name": "@getdammy/client",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Client-SDK voor de DAM (single source of truth voor beelden): picker-handshake en stabiele preset-URLs.",
   "license": "MIT",
   "repository": {

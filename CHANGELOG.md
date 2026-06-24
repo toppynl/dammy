@@ -2,6 +2,20 @@
 
 Alle noemenswaardige wijzigingen aan `@getdammy/client`. Volgt semver.
 
+## 0.3.0
+### Toegevoegd
+- **Scoped picker-koppeling** (`openDamPicker({ tokenEndpoint, folder })`). Geef
+  een `tokenEndpoint` op je eigen backend op, dan opent de picker **brand-gepind
+  en read-only** — de redacteur heeft géén DAM-account meer nodig en zit altijd
+  in de juiste brand. Het integratie-geheim blijft server-side; de SDK haalt per
+  keer een vers, kortlevend token op. Model à la Bynder Compact View / Frontify
+  Finder. `folder` opent meteen in een bepaalde DAM-map (zachte voorkeuze).
+- Voorbeeld-veld (`DamAssetField.tsx`) bijgewerkt met het token-endpoint-patroon
+  + een voorbeeld-backendroute.
+
+Zonder `tokenEndpoint` blijft het oude gedrag (persoonlijke DAM-login) werken —
+niet-brekend.
+
 ## 0.2.1
 - Publieke broncode-repo: [github.com/toppynl/dammy](https://github.com/toppynl/dammy)
   (`repository`/`homepage`/`bugs` toegevoegd zodat npm naar de repo + changelog linkt).

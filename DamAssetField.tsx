@@ -12,7 +12,27 @@
  *   {
  *     name: "image",
  *     type: "json",            // bewaart { assetId, alt, width, height, focalX, focalY }
- *     admin: { components: { Field: "/components/DamAssetField#DamAssetField" } },
+ *     admin: {
+ *       components: { Field: "/components/DamAssetField#DamAssetField" },
+ *       custom: { damFolder: "<dam-categorie-id>" }, // optioneel: open in deze map
+ *     },
+ *   }
+ *
+ * ── Scoped koppeling (aanrader) ──────────────────────────────────────────────
+ * Met `tokenEndpoint` heeft de redacteur GEEN DAM-account nodig en zit-ie altijd
+ * in de juiste brand. Voeg één backend-route toe die het integratie-geheim
+ * (server-side env, NOOIT in de browser) inwisselt voor een vers token:
+ *
+ *   // POST /api/dam-token  (jouw eigen backend)
+ *   export async function POST(req) {
+ *     const me = await getCurrentEditor(req);            // jouw auth
+ *     const { folder } = await req.json().catch(() => ({}));
+ *     const res = await fetch("https://dam.woutervanuden.nl/api/picker/session", {
+ *       method: "POST",
+ *       headers: { Authorization: `Bearer ${process.env.DAM_PICKER_SECRET}` },
+ *       body: JSON.stringify({ user: { id: me.id, email: me.email, name: me.name }, folder }),
+ *     });
+ *     return Response.json(await res.json());             // { token, origin, expiresIn }
  *   }
  */
 
@@ -34,12 +54,18 @@ export function DamAssetField({
   field,
 }: {
   path: string;
-  field?: { label?: string; admin?: { description?: string } };
+  field?: { label?: string; admin?: { description?: string; custom?: { damFolder?: string } } };
 }) {
   const { value, setValue } = useField<Value>({ path });
 
   async function choose() {
     const ref = await openDamPicker({
+      // Scoped koppeling: jouw backend-routetje wisselt het integratie-geheim in
+      // voor een vers, kortlevend token (zie de kop van dit bestand). Laat 'm weg
+      // en de picker valt terug op een persoonlijke DAM-login.
+      tokenEndpoint: "/api/dam-token",
+      // Optioneel: open meteen in een bepaalde DAM-map (categorie-id), per veld.
+      folder: field?.admin?.custom?.damFolder,
       usage: { source: "payload", field: path },
       // presets hoeven hier niet; de website kiest de preset bij het renderen.
     });

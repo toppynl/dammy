@@ -2,6 +2,20 @@
 
 Alle noemenswaardige wijzigingen aan `@getdammy/client`. Volgt semver.
 
+## 0.4.0
+### Toegevoegd
+- **Payload-doorgeefluik**: de picker stuurt sinds kort meer mee dan de SDK
+  doorliet. `DamAssetRef` bevat nu ook `url` (de URL volgens het in de picker
+  gekozen formaat), `originalUrl`, `srcset` (kant-en-klaar voor responsive
+  beelden), `preset`, `crop` (uitsnede in bron-pixels, incl. gekozen
+  uitvoerformaat), `variant` (in de DAM voorbereide uitsnede) en `blurHash`
+  (blur-up placeholder). Alles optioneel en additief — bestaande afnemers
+  blijven ongewijzigd werken.
+### Gewijzigd
+- Default-origin is nu **https://dam.oftomorrow.eu** (de DAM is verhuisd;
+  dam.woutervanuden.nl is read-only legacy). Wie `configureDam({ origin })`
+  aanroept merkt niets.
+
 ## 0.3.0
 ### Toegevoegd
 - **Scoped picker-koppeling** (`openDamPicker({ tokenEndpoint, folder })`). Geef

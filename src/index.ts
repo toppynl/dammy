@@ -3,7 +3,9 @@
  * Core: nul runtime-dependencies. Zie ook `@getdammy/client/react`.
  */
 
-let damOrigin = "https://dam.woutervanuden.nl";
+// dam.oftomorrow.eu = productie sinds de verhuizing (2026-08);
+// dam.woutervanuden.nl is de bevroren read-only legacy-omgeving.
+let damOrigin = "https://dam.oftomorrow.eu";
 
 /** Stel de DAM-origin in (default = productie). Roep dit één keer aan bij init. */
 export function configureDam(opts: { origin?: string }): void {
@@ -15,6 +17,16 @@ export function getDamOrigin(): string {
   return damOrigin;
 }
 
+/** Uitsnede in bron-pixels; `outWidth/outHeight` = gekozen uitvoerformaat. */
+export type DamCrop = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  outWidth?: number;
+  outHeight?: number;
+};
+
 export type DamAssetRef = {
   assetId: string;
   alt: string;
@@ -24,8 +36,23 @@ export type DamAssetRef = {
   focalY: number;
   filename: string;
   contentType: string;
-  /** Kant-en-klare preset-URLs (preset → url), als je `presets` meegaf. */
+  /** Kant-en-klare preset-URLs (preset → url), als je `presets` meegaf.
+   *  Inclusief eventuele uitsnede (`?crop=`) en variant (`?variant=`). */
   urls?: Record<string, string>;
+  /** De URL volgens het in de picker gekozen formaat, incl. uitsnede/variant. */
+  url?: string;
+  /** Het onbewerkte bestand (zonder uitsnede). */
+  originalUrl?: string;
+  /** Kant-en-klare `srcset`-string over alle formaten met bekende breedte. */
+  srcset?: string;
+  /** Gekozen preset-slug, of `null` bij origineel. */
+  preset?: string | null;
+  /** Gekozen uitsnede, als de redacteur er een maakte. */
+  crop?: DamCrop;
+  /** Gekozen asset-variant (in de DAM voorbereide uitsnede), of `null`. */
+  variant?: string | null;
+  /** Blurhash van het beeld — voor een blur-up placeholder. */
+  blurHash?: string | null;
 };
 
 export type OpenPickerOptions = {
@@ -169,6 +196,13 @@ function waitForSelection(popup: Window | null): Promise<DamAssetRef | null> {
         filename: a.filename,
         contentType: a.contentType,
         urls: a.urls,
+        url: a.url,
+        originalUrl: a.originalUrl,
+        srcset: a.srcset,
+        preset: a.preset ?? null,
+        crop: a.crop,
+        variant: a.variant ?? null,
+        blurHash: a.blurHash ?? null,
       });
       try { popup?.close(); } catch { /* cross-origin close kan falen */ }
     }

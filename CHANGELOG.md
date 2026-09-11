@@ -2,6 +2,29 @@
 
 Alle noemenswaardige wijzigingen aan `@getdammy/client`. Volgt semver.
 
+## 0.5.0
+### Toegevoegd
+- **`imageVersion` en `cdn` komen door de selectie-payload.** De picker stuurt
+  sinds de CDN-migratie een opaque versiestempel (`imageVersion`) en, als de
+  DAM-omgeving een delivery-Worker heeft, een `cdn`-blok (`base`, `v`, `g`,
+  `presets`, `urls`) mee. 0.4.0 hield die tegen; `DamAssetRef` draagt ze nu
+  (optioneel, additief — bestaande refs blijven geldig).
+- **CDN-helpers in de core**, zodat geen afnemer z'n eigen URL-bouwer hoeft te
+  schrijven: `damCdnUrl(ref, { w, ar?, fit?, dpr? })` (snapt `w` omhoog naar de
+  Worker-allowlist, laat inerte parameters weg), `damCdnSrcSet(ref, { maxWidth })`,
+  `damRefImageUrl(ref, preset)` (CDN als het kan, anders de preset-route),
+  `hasDamCdn(ref)`, `snapDamCdnWidth`, `DAM_CDN_WIDTHS`. Alles geeft `null` /
+  valt terug op de preset-route voor refs van vóór de CDN-migratie.
+- `configureDam({ cdnOrigin })` voor staging/self-host; default
+  `https://cdn.dam.oftomorrow.eu`. Een `cdn.base` in de ref wint altijd.
+- `DamImage` accepteert nu de hele ref als `asset` en levert dan over de CDN
+  (ladder begrensd op de bronbreedte). `assetId`-only blijft werken zoals het was.
+- `DamRefResult` (van `resolveDamRef`) typeert `imageVersion`, `focal` en `cdn`.
+### Gewijzigd
+- `blurHash`-documentatie aangescherpt: het is de hash van het **hoofdbeeld**
+  (niet van een variant/crop) en de DAM vult 'm sinds deze release ook bij
+  selectie in de picker, dus hij is zelden nog `null` voor nieuw gekozen assets.
+
 ## 0.4.0
 ### Toegevoegd
 - **Payload-doorgeefluik**: de picker stuurt sinds kort meer mee dan de SDK

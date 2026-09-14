@@ -15,7 +15,7 @@ Default wijst naar productie. Override voor staging/self-host:
 
 ```ts
 import { configureDam } from "@getdammy/client";
-configureDam({ origin: "https://dam.woutervanuden.nl" });
+configureDam({ origin: "https://dam-staging.example", cdnOrigin: "https://cdn.dam-staging.example" });
 ```
 
 ## Core (`@getdammy/client`) — geen dependencies
@@ -25,10 +25,18 @@ import { openDamPicker, damImageUrl, resolveDamRef } from "@getdammy/client";
 
 // Picker openen (browser), referentie terugkrijgen:
 const ref = await openDamPicker({ presets: ["hd", "medium"] });
-// → { assetId, alt, width, height, focalX, focalY, urls }
+// → { assetId, alt, width, height, focalX, focalY, urls, url, srcset, preset,
+//     crop, variant, blurHash, imageVersion, cdn? }
+// Bewaar de hele ref in je CMS — dat is je snapshot.
 
-// Stabiele preset-URL bouwen:
+// Stabiele preset-URL bouwen (klassieke route, werkt voor elke ref):
 damImageUrl(assetId, "hd"); // → {DAM}/api/images/hd/{assetId}
+
+// CDN-levering (parametrisch, versiestempel in de URL) — null zonder imageVersion:
+damCdnUrl(ref, { w: 640 });                  // → https://cdn…/{id}?w=640&v=…
+damCdnUrl(ref, { w: 640, ar: "1:1", dpr: 2 }); // + focuspunt als g=…
+damCdnSrcSet(ref, { maxWidth: ref.width });  // "… 80w, … 160w, …" tot de bronbreedte
+damRefImageUrl(ref, "medium");               // CDN als het kan, anders de preset-route
 
 // Huidige metadata + beschikbaarheid (SSR/fallback):
 const meta = await resolveDamRef(assetId);
@@ -41,7 +49,8 @@ De **website** kiest de preset per slot; de redacteur niet.
 ```tsx
 import { DamImage } from "@getdammy/client/react";
 
-<DamImage assetId={value.assetId} alt={value.alt} slot="hero" />
+<DamImage asset={value} slot="hero" />            // CDN-ladder als de ref dat kan
+<DamImage assetId={value.assetId} alt={value.alt} slot="card" /> // klassieke preset-route
 ```
 
 ## Payload-veld (kopieerbaar, niet in de package)

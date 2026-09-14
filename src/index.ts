@@ -6,15 +6,25 @@
 // dam.oftomorrow.eu = productie sinds de verhuizing (2026-08);
 // dam.woutervanuden.nl is de bevroren read-only legacy-omgeving.
 let damOrigin = "https://dam.oftomorrow.eu";
+// Parametrische delivery-Worker (zie cdn-delivery.md in de DAM-repo). Alleen
+// gebruikt als terugval wanneer een ref géén `cdn.base` meedraagt.
+let damCdnOrigin = "https://cdn.dam.oftomorrow.eu";
 
-/** Stel de DAM-origin in (default = productie). Roep dit één keer aan bij init. */
-export function configureDam(opts: { origin?: string }): void {
+/** Stel de DAM-origin (en optioneel de CDN-origin) in. Default = productie.
+ *  Roep dit één keer aan bij init. */
+export function configureDam(opts: { origin?: string; cdnOrigin?: string }): void {
   if (opts.origin) damOrigin = opts.origin.replace(/\/+$/, "");
+  if (opts.cdnOrigin) damCdnOrigin = opts.cdnOrigin.replace(/\/+$/, "");
 }
 
 /** De huidige DAM-origin. */
 export function getDamOrigin(): string {
   return damOrigin;
+}
+
+/** De huidige CDN-origin (terugval als een ref geen `cdn.base` heeft). */
+export function getDamCdnOrigin(): string {
+  return damCdnOrigin;
 }
 
 /** Uitsnede in bron-pixels; `outWidth/outHeight` = gekozen uitvoerformaat. */
@@ -25,6 +35,18 @@ export type DamCrop = {
   height: number;
   outWidth?: number;
   outHeight?: number;
+};
+
+/** Het `cdn`-blok dat de DAM meestuurt zodra de delivery-Worker in die omgeving
+ *  geconfigureerd is. `base` = `https://cdn…/<assetId>`, `v` = versiestempel
+ *  (gelijk aan `imageVersion`), `g` = focuspunt als `<x>x<y>`. `urls` zijn
+ *  kant-en-klare geversiede URLs per systeempreset; `presets` hun breedte. */
+export type DamCdnBlock = {
+  base: string;
+  v: string;
+  g: string;
+  presets: Record<string, { w: number }>;
+  urls: Record<string, string>;
 };
 
 export type DamAssetRef = {
@@ -51,8 +73,15 @@ export type DamAssetRef = {
   crop?: DamCrop;
   /** Gekozen asset-variant (in de DAM voorbereide uitsnede), of `null`. */
   variant?: string | null;
-  /** Blurhash van het beeld — voor een blur-up placeholder. */
+  /** Blurhash van het hoofdbeeld — voor een blur-up placeholder. `null` als de
+   *  DAM er (nog) geen heeft; bij een variant/crop is dit de hash van het
+   *  volledige beeld, niet van de uitsnede. */
   blurHash?: string | null;
+  /** Opaque versiestempel van de pixels (wisselt alleen bij een echte beeld- of
+   *  focal-wijziging). `null` als de DAM 'm niet kon leveren; dan géén `cdn`. */
+  imageVersion?: string | null;
+  /** CDN-blok — afwezig als de DAM-omgeving geen delivery-Worker heeft. */
+  cdn?: DamCdnBlock;
 };
 
 export type OpenPickerOptions = {
@@ -90,6 +119,125 @@ export function damImageUrl(assetId: string, preset = "medium"): string {
   return `${damOrigin}/api/images/${preset}/${assetId}`;
 }
 
+
+/* ───────────────────────── CDN (parametrische levering) ───────────────────────── */
+
+/** Breedte-allowlist van de delivery-Worker. Een `w` buiten deze lijst is een
+ *  403, dus elke breedte die de SDK uitgeeft wordt omhoog gesnapt. */
+export const DAM_CDN_WIDTHS = [80, 160, 240, 320, 480, 640, 768, 960, 1024, 1280, 1600, 1920] as const;
+export type DamCdnWidth = (typeof DAM_CDN_WIDTHS)[number];
+export type DamCdnAspectRatio = "orig" | "1:1" | "4:3" | "3:4" | "16:9" | "8:1";
+export type DamCdnFit = "cover" | "contain";
+export type DamCdnDpr = 1 | 2;
+
+/** Rond omhoog naar de eerstvolgende toegestane breedte; daarboven de grootste. */
+export function snapDamCdnWidth(width: number): DamCdnWidth {
+  for (const rung of DAM_CDN_WIDTHS) if (rung >= width) return rung;
+  return DAM_CDN_WIDTHS[DAM_CDN_WIDTHS.length - 1];
+}
+
+/** Het minimum dat `damCdnUrl` nodig heeft: een `DamAssetRef` voldoet. */
+export type DamCdnRefInput = {
+  assetId: string;
+  imageVersion?: string | null;
+  focalX?: number | null;
+  focalY?: number | null;
+  variant?: string | null;
+  cdn?: DamCdnBlock | null;
+};
+
+export type DamCdnUrlOptions = {
+  /** Gewenste breedte in CSS-px; wordt omhoog gesnapt naar de allowlist. */
+  w: number;
+  /** Default `orig` (wordt dan weggelaten). */
+  ar?: DamCdnAspectRatio;
+  /** Default `cover` (alleen relevant bij `ar` ≠ `orig`). */
+  fit?: DamCdnFit;
+  /** Default `1`. */
+  dpr?: DamCdnDpr;
+};
+
+function isCdnBlock(x: unknown): x is DamCdnBlock {
+  if (!x || typeof x !== "object") return false;
+  const b = x as Record<string, unknown>;
+  return typeof b.base === "string" && typeof b.v === "string" && typeof b.g === "string";
+}
+
+/** Focuspunt als `<x>x<y>`, byte-identiek aan wat de DAM zelf uitgeeft. */
+function formatGravity(x: number, y: number): string {
+  const f = (n: number) => Number(Math.max(0, Math.min(1, n)).toFixed(4)).toString();
+  return `${f(x)}x${f(y)}`;
+}
+
+/** Kan deze ref over de CDN geleverd worden? (heeft een versiestempel) */
+export function hasDamCdn(ref: DamCdnRefInput): boolean {
+  return !!(ref.cdn?.v ?? ref.imageVersion);
+}
+
+/**
+ * Bouw één CDN-URL voor een gekozen asset volgens het parametrische contract
+ * (`/<assetId>?w=&ar=&fit=&dpr=&v=&g=&variant=`). Geeft `null` als de ref geen
+ * versiestempel heeft (asset gekozen vóór de CDN-migratie, of een DAM-omgeving
+ * zonder Worker) — val dan terug op `damImageUrl`.
+ *
+ * Inerte parameters worden weggelaten zodat de cache niet splijt: `fit` en `g`
+ * doen niets bij `ar=orig`, en `g` doet niets bij `fit=contain`.
+ */
+export function damCdnUrl(ref: DamCdnRefInput, opts: DamCdnUrlOptions): string | null {
+  const v = ref.cdn?.v ?? ref.imageVersion ?? null;
+  if (!v) return null;
+  const { ar = "orig", fit = "cover", dpr = 1 } = opts;
+  const base = ref.cdn?.base ?? `${damCdnOrigin}/${encodeURIComponent(ref.assetId)}`;
+  const q = new URLSearchParams();
+  q.set("w", String(snapDamCdnWidth(opts.w)));
+  if (ar !== "orig") q.set("ar", ar);
+  if (ar !== "orig" && fit !== "cover") q.set("fit", fit);
+  if (dpr !== 1) q.set("dpr", String(dpr));
+  q.set("v", v);
+  if (ar !== "orig" && fit !== "contain") {
+    const g = ref.cdn?.g ?? (ref.focalX != null && ref.focalY != null ? formatGravity(ref.focalX, ref.focalY) : null);
+    if (g) q.set("g", g);
+  }
+  if (ref.variant) q.set("variant", ref.variant);
+  return `${base}?${q.toString()}`;
+}
+
+/**
+ * Kant-en-klare `srcset` over de CDN-ladder. Zonder `maxWidth` de hele ladder;
+ * met `maxWidth` (bv. `ref.width`, de bronbreedte) alleen de treden tot en met
+ * de eerste die de bron haalt — de Worker schaalt toch nooit op. `null` als de
+ * ref niet over de CDN kan.
+ */
+export function damCdnSrcSet(
+  ref: DamCdnRefInput,
+  opts: { maxWidth?: number | null; ar?: DamCdnAspectRatio; fit?: DamCdnFit } = {},
+): string | null {
+  if (!hasDamCdn(ref)) return null;
+  const max = opts.maxWidth ?? Infinity;
+  const parts: string[] = [];
+  for (const w of DAM_CDN_WIDTHS) {
+    const url = damCdnUrl(ref, { w, ar: opts.ar, fit: opts.fit });
+    if (!url) return null;
+    parts.push(`${url} ${w}w`);
+    if (w >= max) break;
+  }
+  return parts.join(", ");
+}
+
+/** Langste zijde van de systeempresets (gelijk aan de DAM's `SYSTEM_PRESETS`). */
+const PRESET_WIDTHS = { hd: 1920, large: 1200, medium: 640, small: 320 } as const;
+export type DamSystemPreset = keyof typeof PRESET_WIDTHS;
+
+/**
+ * Beste beeld-URL voor een preset-slot: over de CDN als de ref dat kan (breedte
+ * van de systeempreset, gesnapt), anders de klassieke preset-route. Laat
+ * bestaande `damImageUrl(assetId, preset)`-aanroepen ongemoeid.
+ */
+export function damRefImageUrl(ref: DamCdnRefInput, preset: DamSystemPreset = "medium"): string {
+  const w = ref.cdn?.presets?.[preset]?.w ?? PRESET_WIDTHS[preset];
+  return damCdnUrl(ref, { w }) ?? damImageUrl(ref.assetId, preset);
+}
+
 export type DamRefResult =
   | {
       available: true;
@@ -109,6 +257,9 @@ export type DamRefResult =
       originalUrl: string;
       presets: string[];
       urls: Record<string, string>;
+      imageVersion?: string | null;
+      focal?: { x: number; y: number };
+      cdn?: DamCdnBlock;
     }
   | { available: false; id: string; reason: string };
 
@@ -203,6 +354,8 @@ function waitForSelection(popup: Window | null): Promise<DamAssetRef | null> {
         crop: a.crop,
         variant: a.variant ?? null,
         blurHash: a.blurHash ?? null,
+        imageVersion: typeof a.imageVersion === "string" ? a.imageVersion : null,
+        ...(isCdnBlock(a.cdn) ? { cdn: a.cdn } : {}),
       });
       try { popup?.close(); } catch { /* cross-origin close kan falen */ }
     }
